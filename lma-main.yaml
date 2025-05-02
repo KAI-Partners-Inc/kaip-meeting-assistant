@@ -23,7 +23,7 @@ Parameters:
     Type: String
     AllowedValues:
       - "Default"
-      - "Healthcare"
+      - "Building Architecure"
     Description: Select the appropriate domain as necessary, or leave it at default
 
   MeetingAssistService:
