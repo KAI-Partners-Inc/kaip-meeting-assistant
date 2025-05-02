@@ -7,10 +7,14 @@ Transform: AWS::Serverless-2016-10-31
 Parameters:
   Domain:
     Type: String
-    Default: "Default"
+    Default: "Building Architecture"
     AllowedValues:
       - "Default"
       - "Healthcare"
+      - "Building Architecture"
+      - "Project Management"
+      - "Legal"
+
     Description: The domain of the application (optional)
 
   CloudWatchLogsExpirationInDays:
@@ -27,8 +31,8 @@ Resources:
           KeyType: HASH
       AttributeDefinitions:
         - AttributeName: LLMPromptTemplateId
-          AttributeType: S
-      BillingMode: PAY_PER_REQUEST
+          AttributeType: S  
+      BillingMode:  PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
