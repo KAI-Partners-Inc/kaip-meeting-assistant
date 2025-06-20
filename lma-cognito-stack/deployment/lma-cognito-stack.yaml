@@ -335,7 +335,6 @@ Resources:
                   - states:StartExecution
                 Resource:
                   - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${LMAStackName}-LMAVirtualParticipantScheduler"
-
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -386,29 +385,31 @@ Resources:
     Properties:
       Handler: index.handler
       Runtime: nodejs18.x
-      Timeout: 3
+      Timeout: 10
       Environment:
         Variables:
           ALLOWED_SIGNUP_EMAIL_DOMAINS: !Ref AllowedSignUpEmailDomain
       InlineCode: |
+
         exports.handler = async (event, context) => {
           console.log(event);
-          const allowed_domains = ['kaipartners.com'];
+          const allowed_domains = process.env.ALLOWED_SIGNUP_EMAIL_DOMAINS.split(',').map(domain => domain.trim());
           const { email } = event.request?.userAttributes;
           if (!email || !email.includes('@')) {
-            throw Error('Username does not exists or invalid email address');
+            throw Error('Username does not exist or invalid email address');
           }
-          const emailDomain = email?.split('@')[1].toLowerCase();;
+          const emailDomain = email?.split('@')[1].toLowerCase();
           if (!emailDomain || !allowed_domains) {
             throw new Error('Server error - invalid configuration');
           }
           if (!allowed_domains.includes(emailDomain)) {
-            console.log(emailDomain)
-            console.log(allowed_domains)
+            console.log(emailDomain);
+            console.log(allowed_domains);
             throw new Error('Invalid email address domain');
           }
           return event;
         };
+
       LoggingConfig:
         LogGroup:
           Fn::Sub: /${AWS::StackName}/lambda/CognitoUserPoolEmailDomainVerifyFunction
