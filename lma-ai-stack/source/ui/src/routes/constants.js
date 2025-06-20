@@ -5,6 +5,7 @@ export const LOGOUT_PATH = '/logout';
 export const CALLS_PATH = '/calls';
 export const STREAM_AUDIO_PATH = '/stream';
 export const VIRTUAL_PARTICIPANT_PATH = '/virtual-participant';
+export const SCREEN_RECORDING_PATH = '/screen-recording';
 export const DEFAULT_PATH = CALLS_PATH;
 export const REDIRECT_URL_PARAM = 'redirect';
 export const MEETINGS_QUERY_PATH = `${CALLS_PATH}/query`;

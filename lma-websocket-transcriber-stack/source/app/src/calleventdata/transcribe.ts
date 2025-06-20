@@ -169,6 +169,25 @@ export const writeCallRecordingEvent = async (
     await writeCallEvent(callRecordingEvent, server);
 };
 
+export const writeCallScreenRecordingEvent = async (
+    callMetaData: CallMetaData,
+    screenRecordingUrl: string,
+    server: FastifyInstance
+): Promise<void> => {
+    const callScreenRecordingEvent = {
+        EventType: 'ADD_S3_SCREEN_RECORDING_URL',
+        CallId: callMetaData.callId,
+        ScreenRecordingUrl: screenRecordingUrl,
+        Duration: callMetaData.duration,
+        Format: callMetaData.format,
+        FrameCount: callMetaData.frameCount,
+        AccessToken: callMetaData.accessToken,
+        IdToken: callMetaData.idToken,
+        RefreshToken: callMetaData.refreshToken,
+    };
+    await writeCallEvent(callScreenRecordingEvent, server);
+};
+
 export const startTranscribe = async (
     socketCallMap: SocketCallData,
     server: FastifyInstance

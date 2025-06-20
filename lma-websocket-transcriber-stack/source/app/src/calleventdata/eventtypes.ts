@@ -16,6 +16,7 @@ export type EventType =
     | 'ADD_TRANSCRIPT_SEGMENT' // required 
     | 'UPDATE_AGENT' // optional
     | 'ADD_S3_RECORDING_URL'  // optional
+    | 'ADD_S3_SCREEN_RECORDING_URL'  // optional
     | 'ADD_CALL_CATEGORY' // optional
     | 'END'; // required
 
@@ -45,6 +46,16 @@ export type CallEndEvent = CallEventBase<'END'> & {
 
 export type CallRecordingEvent = CallEventBase<'ADD_S3_RECORDING_URL'> & {
     RecordingUrl: string,
+    AccessToken?: string,
+    IdToken?: string,
+    RefreshToken?: string,
+};
+
+export type CallScreenRecordingEvent = CallEventBase<'ADD_S3_SCREEN_RECORDING_URL'> & {
+    ScreenRecordingUrl: string,
+    Duration?: number,
+    Format?: string,
+    FrameCount?: number,
     AccessToken?: string,
     IdToken?: string,
     RefreshToken?: string,
@@ -89,6 +100,10 @@ export type CallMetaData = {
     samplingRate: number,
     callEvent: string,
     activeSpeaker: string,
+    recordingType?: string, // 'audio' or 'audio_video'
+    duration?: number,
+    format?: string,
+    frameCount?: number,
     channels: {
         [channelId: string]: ChannelSpeakerData;
     };
@@ -101,7 +116,11 @@ export type SocketCallData = {
     callMetadata: CallMetaData,
     audioInputStream?: stream.PassThrough,
     writeRecordingStream?: WriteStream,
-    recordingFileSize?: number
+    recordingFileSize?: number,
+    screenRecordingStream?: WriteStream,
+    screenRecordingFileSize?: number,
+    screenRecordingMetadata?: CallMetaData,
+    screenFrames?: any[],
     startStreamTime: Date,
     speakerEvents: [],
     ended: boolean

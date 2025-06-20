@@ -10,6 +10,7 @@ import {
   MEETINGS_QUERY_PATH,
   STREAM_AUDIO_PATH,
   VIRTUAL_PARTICIPANT_PATH,
+  SCREEN_RECORDING_PATH,
   DEFAULT_PATH,
 } from '../../routes/constants';
 
@@ -34,30 +35,36 @@ export const callsNavItems = [
       },
       {
         type: 'link',
+        text: 'Screen Recording',
+        href: `#${SCREEN_RECORDING_PATH}`,
+        external: true,
+      },
+      {
+        type: 'link',
         text: 'Virtual Participant (Preview)',
         href: `#${VIRTUAL_PARTICIPANT_PATH}`,
         external: true,
       },
     ],
   },
-  {
-    type: 'section',
-    text: 'Resources',
-    items: [
-      {
-        type: 'link',
-        text: 'Blog Post',
-        href: 'https://www.amazon.com/live-meeting-assistant',
-        external: true,
-      },
-      {
-        type: 'link',
-        text: 'Source Code',
-        href: 'https://github.com/aws-samples/amazon-transcribe-live-meeting-assistant',
-        external: true,
-      },
-    ],
-  },
+  // {
+  //   type: 'section',
+  //   text: 'Resources',
+  //   items: [
+  //     {
+  //       id: 'documentation',
+  //       text: 'Blog Post',
+  //       href: 'https://www.amazon.com/live-meeting-assistant',
+  //       external: true,
+  //     },
+  //     {
+  //       id: 'source',
+  //       text: 'Source Code',
+  //       href: 'https://github.com/aws-samples/amazon-transcribe-live-meeting-assistant',
+  //       external: true,
+  //     },
+  //   ],
+  // },
 ];
 
 const defaultOnFollowHandler = (ev) => {
@@ -79,6 +86,8 @@ const Navigation = ({ header = callsNavHeader, items = callsNavItems, onFollowHa
     activeHref = `#${STREAM_AUDIO_PATH}`;
   } else if (path.includes(VIRTUAL_PARTICIPANT_PATH)) {
     activeHref = `#${VIRTUAL_PARTICIPANT_PATH}`;
+  } else if (path.includes(SCREEN_RECORDING_PATH)) {
+    activeHref = `#${SCREEN_RECORDING_PATH}`;
   }
   return (
     <Switch>

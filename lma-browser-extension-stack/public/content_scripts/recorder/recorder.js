@@ -14,6 +14,12 @@ let samplingRate = 44100;
 let audioContext;
 let displayStream;
 let micStream;
+let mediaRecorder;
+let recordedChunks = [];
+let screenRecordingEnabled = true; // Can be controlled via extension settings
+let recordingStartTime;
+let frameCaptureInterval;
+let capturedFrames = [];
 
 /* Helper funcs */
 const bytesToBase64DataUrl = async (bytes, type = "application/octet-stream") => {
@@ -45,8 +51,115 @@ const convertToMono = (audioSource) => {
   return merger;
 };
 
+const captureScreenFrame = async () => {
+  try {
+    if (displayStream && displayStream.getVideoTracks().length > 0) {
+      const videoTrack = displayStream.getVideoTracks()[0];
+      const imageCapture = new ImageCapture(videoTrack);
+      const blob = await imageCapture.grabFrame();
+      
+      const timestamp = Date.now() - recordingStartTime;
+      const frameData = {
+        timestamp: timestamp,
+        data: await bytesToBase64DataUrl(blob, 'image/jpeg'),
+        width: blob.width,
+        height: blob.height
+      };
+      
+      capturedFrames.push(frameData);
+      
+      // Keep only last 50 frames to manage memory
+      if (capturedFrames.length > 50) {
+        capturedFrames = capturedFrames.slice(-50);
+      }
+      
+      console.log(`Captured frame at ${timestamp}ms`);
+    }
+  } catch (error) {
+    console.log('Error capturing screen frame:', error);
+  }
+};
+
+const startScreenRecording = async () => {
+  try {
+    if (!screenRecordingEnabled) return;
+    
+    console.log("Starting screen recording...");
+    recordingStartTime = Date.now();
+    capturedFrames = [];
+    
+    // Create MediaRecorder for video recording
+    const options = {
+      mimeType: 'video/webm;codecs=vp9,opus',
+      videoBitsPerSecond: 2500000 // 2.5 Mbps
+    };
+    
+    mediaRecorder = new MediaRecorder(displayStream, options);
+    
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    };
+    
+    mediaRecorder.onstop = async () => {
+      console.log("Screen recording stopped, processing...");
+      await processScreenRecording();
+    };
+    
+    mediaRecorder.start(1000); // Record in 1-second chunks
+    
+    // Start frame capture every 5 seconds
+    frameCaptureInterval = setInterval(captureScreenFrame, 5000);
+    
+    console.log("Screen recording started successfully");
+    
+  } catch (error) {
+    console.log('Error starting screen recording:', error);
+  }
+};
+
+const processScreenRecording = async () => {
+  try {
+    if (recordedChunks.length === 0) return;
+    
+    const videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+    const videoBase64 = await bytesToBase64DataUrl(videoBlob, 'video/webm');
+    
+    // Send screen recording data to service worker
+    const screenData = {
+      action: "ScreenRecordingData",
+      videoData: videoBase64,
+      frames: capturedFrames,
+      duration: Date.now() - recordingStartTime,
+      format: 'webm'
+    };
+    
+    chrome.runtime.sendMessage(screenData);
+    console.log("Screen recording data sent to service worker");
+    
+    // Clear data
+    recordedChunks = [];
+    capturedFrames = [];
+    
+  } catch (error) {
+    console.log('Error processing screen recording:', error);
+  }
+};
+
 const stopStreaming = async () => {
   console.log("recorder stop streaming");
+  
+  // Stop screen recording
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  
+  if (frameCaptureInterval) {
+    clearInterval(frameCaptureInterval);
+    frameCaptureInterval = null;
+  }
+  
   if (audioProcessor && audioProcessor.port) {
     audioProcessor.port.postMessage({
       message: 'UPDATE_RECORDING_STATE',
@@ -138,6 +251,8 @@ const startStreaming = async (sendResponse) => {
     };
     channelMerger.connect(audioProcessor);
     
+    // Start screen recording after audio setup is complete
+    await startScreenRecording();
 
     // buffer[0] - display stream,  buffer[1] - mic stream
     /*audioProcessor.port.onmessage = async (event) => {

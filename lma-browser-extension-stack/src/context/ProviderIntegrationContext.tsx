@@ -13,6 +13,7 @@ type Call = {
   callId: string,
   samplingRate: number,
   activeSpeaker: string,
+  recordingType?: string, // Add recording type to distinguish audio vs video
 }
 
 const initialIntegration = {
@@ -161,7 +162,8 @@ function IntegrationProvider({ children }: any) {
       toNumber: '+8001112222',
       callId: `${meetingTopic} - ${getTimestampStr()}`,
       samplingRate: 8000,
-      activeSpeaker: 'n/a'
+      activeSpeaker: 'n/a',
+      recordingType: 'audio_video' // Indicate this call includes both audio and video
     }
 
     setCurrentCall(callMetadata);
@@ -214,6 +216,47 @@ function IntegrationProvider({ children }: any) {
           if (readyState === ReadyState.OPEN) {
             const audioData = await dataUrlToBytes(request.audio, muted, paused);
             sendMessage(audioData);
+          }
+        } else if (request.action === "ScreenRecordingData") {
+          // Handle screen recording data
+          if (readyState === ReadyState.OPEN) {
+            console.log("Processing screen recording data...");
+            
+            // Send screen recording metadata first
+            const screenMetadata = {
+              callEvent: 'SCREEN_RECORDING',
+              callId: currentCall.callId,
+              agentId: currentCall.agentId,
+              fromNumber: currentCall.fromNumber,
+              toNumber: currentCall.toNumber,
+              recordingType: 'screen_video',
+              duration: request.duration,
+              format: request.format,
+              frameCount: request.frames ? request.frames.length : 0,
+              timestamp: new Date().toISOString()
+            };
+            
+            sendMessage(JSON.stringify(screenMetadata));
+            
+            // Send the video data
+            if (request.videoData) {
+              // Convert base64 to binary and send
+              const videoBytes = Uint8Array.from(atob(request.videoData), c => c.charCodeAt(0));
+              sendMessage(videoBytes);
+            }
+            
+            // Send frame data if available
+            if (request.frames && request.frames.length > 0) {
+              const frameData = {
+                callEvent: 'SCREEN_FRAMES',
+                callId: currentCall.callId,
+                frames: request.frames,
+                timestamp: new Date().toISOString()
+              };
+              sendMessage(JSON.stringify(frameData));
+            }
+            
+            console.log("Screen recording data sent to WebSocket");
           }
         } else if (request.action === "ActiveSpeakerChange") {
           currentCall.callEvent = 'SPEAKER_CHANGE';
