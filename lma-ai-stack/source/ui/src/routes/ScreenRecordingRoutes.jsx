@@ -14,4 +14,4 @@ const ScreenRecordingRoutes = () => (
   </Switch>
 );
 
-export default ScreenRecordingRoutes; 
+export default ScreenRecordingRoutes;

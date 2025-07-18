@@ -320,7 +320,7 @@ Parameters:
   BootstrapVersion:
     Type: String
     Default: 0.2.9
-    Description: >
+    Description: >-
       Artifacts version (semver). Used to point to a specific release in the S3
       bootstrap bucket
 
@@ -400,6 +400,14 @@ Parameters:
       Cognito.
     AllowedPattern: '^(|([\w-]+\.)+[\w-]{2,6}(, *([\w-]+\.)+[\w-]{2,6})*)$'
 
+  VideoSummaryBucket:
+    Type: String
+    Description: S3 bucket where video analysis summaries are stored.
+    Default: ""
+  VideoSummaryPrefix:
+    Type: String
+    Description: S3 prefix for video analysis summaries.
+    Default: "lma-video-recordings/"
 
 Metadata:
   "AWS::CloudFormation::Interface":
@@ -1070,6 +1078,8 @@ Resources:
           CALL_DATA_STREAM_NAME: !Ref CallDataStream
           BOTO_READ_TIMEOUT: 60
           EMAIL_PW: MP6Xe_~t%As4c;fP-T==aPW~XP|T2tUr
+          VideoSummaryBucket: !Ref VideoSummaryBucket
+          VideoSummaryPrefix: !Ref VideoSummaryPrefix
       Timeout: 240
       MemorySize: 128
       Handler: lambda_function.handler
@@ -1120,6 +1130,11 @@ Resources:
               - Effect: Allow
                 Action: kinesis:PutRecord
                 Resource: !Ref CallDataStreamArn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${VideoSummaryBucket}/*"
               - !If
                 - ShouldEnableEndOfCallLambdaHookFunction
                 - Effect: Allow
@@ -1135,7 +1150,6 @@ Resources:
                   Resource:
                     - !GetAtt BedrockSummaryLambda.Arn
                 - Ref: AWS::NoValue
-
 
   ##########################################################################
   # SNS Topic for Category Event Notifications
@@ -1248,6 +1262,10 @@ Resources:
               Action:
                 - lambda:InvokeFunction
               Resource: !GetAtt AsyncAgentAssistOrchestrator.Arn
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt VideoAnalysisProcessorFunction.Arn
       Runtime: python3.12
       Timeout: 900
       Environment:
@@ -1282,6 +1300,9 @@ Resources:
           CALL_DATA_STREAM_NAME: !Ref CallDataStream
           SNS_TOPIC_ARN: !Ref CategorySNSTopic
           PARAMETER_STORE_NAME: !Ref LMASettingsParameterName
+          VideoSummaryBucket: !Ref VideoSummaryBucket
+          VideoSummaryPrefix: !Ref VideoSummaryPrefix
+          VIDEO_ANALYSIS_PROCESSOR_ARN: !GetAtt VideoAnalysisProcessorFunction.Arn
       LoggingConfig:
         LogGroup:
           Fn::Sub: /${AWS::StackName}/lambda/CallEventProcessorFunction
@@ -2307,3 +2328,68 @@ Resources:
             reason:
               This is using Cloudfront default TLS, can be changed by customer
               if needed.
+
+  VideoAnalysisProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt VideoAnalysisProcessorExecutionRole.Arn
+      Runtime: python3.12
+      Environment:
+        Variables:
+          VideoSummaryBucket: !Ref VideoSummaryBucket
+          VideoSummaryPrefix: !Ref VideoSummaryPrefix
+          ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN: !GetAtt AsyncTranscriptSummaryOrchestrator.Arn
+          APPSYNC_GRAPHQL_URL: !GetAtt AppSyncApiEncrypted.GraphQLUrl
+      Timeout: 900
+      MemorySize: 3000
+      Handler: lambda_function.handler
+      CodeUri: ../source/lambda_functions/video_analysis_processor
+      Layers:
+        - !Ref TranscriptEnrichmentPythonLayer
+      Description: Lambda function for video analysis and summary generation.
+      LoggingConfig:
+        LogGroup:
+          Fn::Sub: /${AWS::StackName}/lambda/VideoAnalysisProcessorFunction
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89
+            reason: Customer can use VPC if desired
+          - id: W92
+            reason: Customer can choose reserved concurrency based on their requirement.
+    DependsOn:
+      - VideoAnalysisProcessorLogGroup
+
+  VideoAnalysisProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /${AWS::StackName}/lambda/VideoAnalysisProcessorFunction
+      RetentionInDays:
+        Ref: CloudWatchLogsExpirationInDays
+
+  VideoAnalysisProcessorExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Video Analysis Processor Lambda Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: !Sub ${AWS::StackName}-VideoAnalysisProcessor
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${VideoSummaryBucket}/*"

@@ -92,4 +92,4 @@ const Navigation = ({
   </Switch>
 );
 
-export default Navigation; 
+export default Navigation;

@@ -27,18 +27,24 @@ export const callsNavItems = [
         text: 'Download Chrome Extension',
         href: `/lma-chrome-extension-${LMA_VERSION}.zip`,
       },
-      // {
-      //   type: 'link',
-      //   text: 'Stream Audio (no extension)',
-      //   href: `#${STREAM_AUDIO_PATH}`,
-      //   external: true,
-      // },
-      // {
-      //   type: 'link',
-      //   text: 'Virtual Participant (Preview)',
-      //   href: `#${VIRTUAL_PARTICIPANT_PATH}`,
-      //   external: true,
-      // },
+      {
+        type: 'link',
+        text: 'Stream Audio (no extension)',
+        href: `#${STREAM_AUDIO_PATH}`,
+        external: true,
+      },
+      {
+        type: 'link',
+        text: 'Screen Recording',
+        href: `#${SCREEN_RECORDING_PATH}`,
+        external: true,
+      },
+      {
+        type: 'link',
+        text: 'Virtual Participant (Preview)',
+        href: `#${VIRTUAL_PARTICIPANT_PATH}`,
+        external: true,
+      },
     ],
   },
   // {
@@ -46,13 +52,13 @@ export const callsNavItems = [
   //   text: 'Resources',
   //   items: [
   //     {
-  //       type: 'link',
+  //       id: 'documentation',
   //       text: 'Blog Post',
   //       href: 'https://www.amazon.com/live-meeting-assistant',
   //       external: true,
   //     },
   //     {
-  //       type: 'link',
+  //       id: 'source',
   //       text: 'Source Code',
   //       href: 'https://github.com/aws-samples/amazon-transcribe-live-meeting-assistant',
   //       external: true,

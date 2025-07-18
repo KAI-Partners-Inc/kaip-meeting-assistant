@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Coroutine, Dict, List, Literal, Optional,
 import uuid
 import json
 import re
+import time
 
 # third-party imports from Lambda layer
 import boto3
@@ -37,6 +38,7 @@ from eventprocessor_utils import (
     transform_segment_to_categories_agent_assist,
     get_owner_from_jwt,
 )
+from urllib.parse import urlparse
 # pylint: enable=import-error
 if TYPE_CHECKING:
     from mypy_boto3_lambda.client import LambdaClient
@@ -149,6 +151,28 @@ class Sentiment(TypedDict):
     """Sentiment Shape"""
     OverallSentiment: Dict[ChannelType, float]
     SentimentByPeriod: Dict[SentimentPeriodType, Dict[ChannelType, List[SentimentByPeriodEntry]]]
+
+VIDEO_ANALYSIS_PROCESSOR_ARN = getenv("VIDEO_ANALYSIS_PROCESSOR_ARN", "")
+
+##########################################################################
+# S3 URI parsing helper
+##########################################################################
+
+def parse_s3_uri(s3_uri):
+    if s3_uri.startswith("s3://"):
+        match = re.match(r"s3://([^/]+)/(.+)", s3_uri)
+        if match:
+            return match.group(1), match.group(2)
+    elif s3_uri.startswith("https://"):
+        # Parse AWS S3 HTTPS URL
+        parsed = urlparse(s3_uri)
+        # Example: https://bucket.s3.region.amazonaws.com/key
+        netloc_parts = parsed.netloc.split('.')
+        if "s3" in netloc_parts:
+            bucket = netloc_parts[0]
+            key = parsed.path.lstrip('/')
+            return bucket, key
+    return None, None
 
 ##########################################################################
 # Transcripts
@@ -1108,6 +1132,7 @@ async def get_call_details(
     CALL_ID = result['CallId']
     call_summary = result.get("CallSummaryText", "")
     people_can_access = result.get("SharedWith", None)
+    recording_url = result.get("RecordingUrl", "")
 
     return dict(
         CustomerPhoneNumber=CUSTOMER_PHONE_NUMBER,
@@ -1115,6 +1140,7 @@ async def get_call_details(
         CallDataStream=CALL_DATA_STREAM_NAME,
         CallSummaryText=call_summary,
         SharedWith=people_can_access,
+        RecordingUrl=recording_url,
     )
 
 def get_caller_and_system_phone_numbers_from_connect(
@@ -1367,15 +1393,47 @@ async def execute_process_event_api_mutation(
             return_value["errors"].append(response)
         else:
             return_value["successes"].append(response)
-        
         if (IS_TRANSCRIPT_SUMMARY_ENABLED):
-            LAMBDA_HOOK_CLIENT.invoke(
-                FunctionName=ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN,
-                InvocationType='Event',
-                Payload=json.dumps(message)
-            )
-            LOGGER.debug("END Event: Invoked Async Transcript Summary Lambda")
-      
+            # Switch to invoke VideoAnalysisProcessorFunction instead of orchestrator
+            if VIDEO_ANALYSIS_PROCESSOR_ARN:
+                # Fetch call details to get RecordingUrl
+                max_retries = 5
+                for attempt in range(max_retries):
+                    call_details = await get_call_details(message, appsync_session)
+                    recording_url = call_details.get("RecordingUrl", "")
+                    if recording_url:
+                        break
+                    if attempt < max_retries - 1:
+                        LOGGER.warning(f"RecordingUrl not found, retrying fetch (60 second delay)({attempt+1}/{max_retries})...")
+                        time.sleep(60)
+                # Before calling parse_s3_uri(recording_url)
+                if recording_url:
+                    video_bucket, video_key = parse_s3_uri(recording_url)
+                else:
+                    video_bucket, video_key = None, None
+                    LOGGER.error("No RecordingUrl found in call record; cannot parse S3 location.")
+                if video_bucket and video_key:
+                    message["VideoBucket"] = video_bucket
+                    message["VideoKey"] = video_key
+                else:
+                    LOGGER.error(f"Could not parse S3 bucket/key from RecordingUrl: {recording_url}")
+                LAMBDA_HOOK_CLIENT.invoke(
+                    FunctionName=VIDEO_ANALYSIS_PROCESSOR_ARN,
+                    InvocationType='Event',
+                    Payload=json.dumps(message)
+                )
+                LOGGER.debug("END Event: Invoked Video Analysis Processor Lambda")
+            # Old orchestrator invocation (commented out)
+            # LAMBDA_HOOK_CLIENT.invoke(
+            #     FunctionName=ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN,
+            #     InvocationType='Event',
+            #     Payload=json.dumps(message)
+            # )
+            # LOGGER.debug("END Event: Invoked Async Transcript Summary Lambda")
+  
+        # Remove old logic: do not wait for RecordingUrl or invoke video analysis Lambda here
+        # LOGGER.info("END event received. Video analysis Lambda is now responsible for post-recording workflow. No action taken here.")
+
         if isinstance(response, Exception):
             return_value["errors"].append(response)
         else:

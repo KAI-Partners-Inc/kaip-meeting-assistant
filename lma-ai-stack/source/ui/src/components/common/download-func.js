@@ -3,7 +3,8 @@ import * as XLSX from 'xlsx';
 import { DEFAULT_OTHER_SPEAKER_NAME } from './constants';
 
 // eslint-disable-next-line prettier/prettier
-export const onImportExcelAsync = (file) => new Promise((resolve, reject) => {
+export const onImportExcelAsync = (file) =>
+  new Promise((resolve, reject) => {
     // Obtener el objeto del archivo cargado
     const { files } = file.target;
     // Leer el archivo a través del objeto FileReader

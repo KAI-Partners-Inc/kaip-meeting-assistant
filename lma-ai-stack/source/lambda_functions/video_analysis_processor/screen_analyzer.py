@@ -31,6 +31,10 @@ class ScreenAnalyzer:
         try:
             LOGGER.info(f"Analyzing {len(frames)} frames for screen content")
             
+            if not frames:
+                # Return basic analysis when no frames are available
+                return await self._create_basic_analysis()
+            
             # Extract text content across all frames
             text_analysis = await self._analyze_text_content(frames)
             
@@ -57,7 +61,54 @@ class ScreenAnalyzer:
             
         except Exception as e:
             LOGGER.error(f"Error analyzing frames: {str(e)}")
-            raise
+            return await self._create_basic_analysis()
+    
+    async def _create_basic_analysis(self) -> Dict:
+        """Create a basic analysis when no frame data is available"""
+        return {
+            "text_analysis": {
+                "total_text_blocks": 0,
+                "unique_text_count": 0,
+                "common_text": [],
+                "important_text": [],
+                "text_by_timestamp": {},
+                "text_density": 0,
+                "note": "No frame data available for text analysis"
+            },
+            "object_analysis": {
+                "total_objects_detected": 0,
+                "unique_objects": 0,
+                "common_objects": [],
+                "application_usage": {},
+                "primary_application": None,
+                "note": "No frame data available for object analysis"
+            },
+            "pattern_analysis": {
+                "static_content": {"count": 0, "percentage": 0},
+                "dynamic_content": {"count": 0, "percentage": 0},
+                "text_heavy_frames": {"count": 0, "percentage": 0},
+                "image_heavy_frames": {"count": 0, "percentage": 0},
+                "mixed_content_frames": {"count": 0, "percentage": 0},
+                "note": "No frame data available for pattern analysis"
+            },
+            "timeline_analysis": {
+                "activities": [],
+                "activity_clusters": [],
+                "total_activities": 0,
+                "note": "No frame data available for timeline analysis"
+            },
+            "element_analysis": {
+                "key_elements": [],
+                "element_frequency": {},
+                "note": "No frame data available for element analysis"
+            },
+            "summary": {
+                "screen_content_type": "unknown",
+                "primary_activities": [],
+                "content_complexity": "unknown",
+                "note": "Basic analysis - full analysis requires frame extraction"
+            }
+        }
     
     async def _analyze_text_content(self, frames: List[Dict]) -> Dict:
         """Analyze text content across all frames"""
@@ -201,17 +252,15 @@ class ScreenAnalyzer:
                     "timestamp": timestamp,
                     "text_count": text_content.get('total_text', 0),
                     "object_count": objects_detected.get('total_objects', 0),
-                    "key_text": [block.get('text', '')[:50] for block in text_content.get('text_blocks', [])[:3]],
-                    "key_objects": [obj.get('name', '') for obj in objects_detected.get('objects', [])[:3]]
+                    "activity_type": self._determine_activity_type(text_content, objects_detected)
                 }
-                
                 timeline.append(activity)
             
             # Identify activity clusters
             activity_clusters = self._identify_activity_clusters(timeline)
             
             return {
-                "timeline": timeline,
+                "activities": timeline,
                 "activity_clusters": activity_clusters,
                 "total_activities": len(timeline)
             }
@@ -221,45 +270,34 @@ class ScreenAnalyzer:
             return {"error": str(e)}
     
     async def _identify_key_elements(self, frames: List[Dict]) -> Dict:
-        """Identify key screen elements and UI components"""
+        """Identify key screen elements and their frequency"""
         try:
-            ui_elements = {
-                "buttons": [],
-                "menus": [],
-                "tabs": [],
-                "forms": [],
-                "charts": [],
-                "tables": []
-            }
+            key_elements = []
+            element_frequency = defaultdict(int)
             
-            # Analyze text content for UI patterns
             for frame in frames:
-                text_blocks = frame.get('text_content', {}).get('text_blocks', [])
+                text_content = frame.get('text_content', {})
+                objects_detected = frame.get('objects_detected', {})
                 
-                for text_block in text_blocks:
-                    text = text_block.get('text', '').lower()
-                    
-                    # Simple pattern matching for UI elements
-                    if any(word in text for word in ['button', 'click', 'submit', 'save']):
-                        ui_elements["buttons"].append(text)
-                    elif any(word in text for word in ['menu', 'file', 'edit', 'view']):
-                        ui_elements["menus"].append(text)
-                    elif any(word in text for word in ['tab', 'page', 'section']):
-                        ui_elements["tabs"].append(text)
-                    elif any(word in text for word in ['form', 'input', 'field', 'enter']):
-                        ui_elements["forms"].append(text)
-                    elif any(word in text for word in ['chart', 'graph', 'plot', 'data']):
-                        ui_elements["charts"].append(text)
-                    elif any(word in text for word in ['table', 'row', 'column', 'cell']):
-                        ui_elements["tables"].append(text)
+                # Collect text elements
+                for text_block in text_content.get('text_blocks', []):
+                    text = text_block.get('text', '').strip()
+                    if text and len(text) > 5:  # Focus on longer text
+                        element_frequency[text] += 1
+                
+                # Collect object elements
+                for obj in objects_detected.get('objects', []):
+                    obj_name = obj.get('name', '').strip()
+                    if obj_name:
+                        element_frequency[obj_name] += 1
             
-            # Count occurrences
-            element_counts = {key: len(value) for key, value in ui_elements.items()}
+            # Get most frequent elements
+            sorted_elements = sorted(element_frequency.items(), key=lambda x: x[1], reverse=True)
+            key_elements = [{"element": elem, "frequency": freq} for elem, freq in sorted_elements[:10]]
             
             return {
-                "ui_elements": ui_elements,
-                "element_counts": element_counts,
-                "most_common_elements": sorted(element_counts.items(), key=lambda x: x[1], reverse=True)
+                "key_elements": key_elements,
+                "element_frequency": dict(element_frequency)
             }
             
         except Exception as e:
@@ -267,88 +305,106 @@ class ScreenAnalyzer:
             return {"error": str(e)}
     
     async def _generate_screen_summary(self, frames: List[Dict]) -> Dict:
-        """Generate a summary of screen content analysis"""
+        """Generate a comprehensive summary of screen content"""
         try:
-            total_frames = len(frames)
-            if total_frames == 0:
-                return {"error": "No frames to analyze"}
+            if not frames:
+                return {
+                    "screen_content_type": "unknown",
+                    "primary_activities": [],
+                    "content_complexity": "unknown"
+                }
             
-            # Calculate overall statistics
-            total_text_blocks = sum(frame.get('text_content', {}).get('total_text', 0) for frame in frames)
-            total_objects = sum(frame.get('objects_detected', {}).get('total_objects', 0) for frame in frames)
+            # Analyze content types
+            text_frames = sum(1 for f in frames if f.get('text_content', {}).get('total_text', 0) > 0)
+            object_frames = sum(1 for f in frames if f.get('objects_detected', {}).get('total_objects', 0) > 0)
             
             # Determine content type
-            if total_text_blocks > total_objects * 2:
-                content_type = "text-heavy"
-            elif total_objects > total_text_blocks * 2:
-                content_type = "visual-heavy"
+            if text_frames > len(frames) * 0.7:
+                content_type = "text_heavy"
+            elif object_frames > len(frames) * 0.7:
+                content_type = "visual_heavy"
             else:
-                content_type = "mixed"
+                content_type = "mixed_content"
             
-            # Identify primary activity
+            # Identify primary activities
             activities = []
             for frame in frames:
-                text_count = frame.get('text_content', {}).get('total_text', 0)
-                object_count = frame.get('objects_detected', {}).get('total_objects', 0)
-                
-                if text_count > 5:
-                    activities.append("reading/documentation")
-                elif object_count > 5:
-                    activities.append("visual_analysis")
-                else:
-                    activities.append("general_browsing")
+                activity = self._determine_activity_type(
+                    frame.get('text_content', {}),
+                    frame.get('objects_detected', {})
+                )
+                if activity not in activities:
+                    activities.append(activity)
             
-            activity_counter = Counter(activities)
-            primary_activity = activity_counter.most_common(1)[0][0] if activity_counter else "unknown"
+            # Determine complexity
+            total_elements = sum(
+                f.get('text_content', {}).get('total_text', 0) + 
+                f.get('objects_detected', {}).get('total_objects', 0)
+                for f in frames
+            )
+            
+            if total_elements > len(frames) * 10:
+                complexity = "high"
+            elif total_elements > len(frames) * 5:
+                complexity = "medium"
+            else:
+                complexity = "low"
             
             return {
-                "total_frames_analyzed": total_frames,
-                "average_text_per_frame": total_text_blocks / total_frames if total_frames > 0 else 0,
-                "average_objects_per_frame": total_objects / total_frames if total_frames > 0 else 0,
-                "content_type": content_type,
-                "primary_activity": primary_activity,
-                "activity_distribution": dict(activity_counter)
+                "screen_content_type": content_type,
+                "primary_activities": activities[:5],
+                "content_complexity": complexity
             }
             
         except Exception as e:
             LOGGER.error(f"Error generating screen summary: {str(e)}")
             return {"error": str(e)}
     
+    def _determine_activity_type(self, text_content: Dict, objects_detected: Dict) -> str:
+        """Determine the type of activity based on content"""
+        text_count = text_content.get('total_text', 0)
+        object_count = objects_detected.get('total_objects', 0)
+        
+        if text_count > 5:
+            return "text_heavy"
+        elif object_count > 5:
+            return "visual_heavy"
+        elif text_count > 0 and object_count > 0:
+            return "mixed"
+        else:
+            return "minimal"
+    
     def _identify_activity_clusters(self, timeline: List[Dict]) -> List[Dict]:
         """Identify clusters of similar activities"""
         try:
             clusters = []
-            current_cluster = {
-                "start_time": timeline[0]["timestamp"] if timeline else 0,
-                "end_time": 0,
-                "activities": []
-            }
+            current_cluster = []
             
-            for i, activity in enumerate(timeline):
-                # Simple clustering based on activity similarity
-                if i > 0:
-                    prev_activity = timeline[i-1]
-                    time_diff = activity["timestamp"] - prev_activity["timestamp"]
-                    
-                    # Start new cluster if significant time gap or activity change
-                    if time_diff > 30 or abs(activity["text_count"] - prev_activity["text_count"]) > 5:
-                        # End current cluster
-                        current_cluster["end_time"] = prev_activity["timestamp"]
-                        clusters.append(current_cluster)
-                        
-                        # Start new cluster
-                        current_cluster = {
-                            "start_time": activity["timestamp"],
-                            "end_time": 0,
-                            "activities": []
-                        }
-                
-                current_cluster["activities"].append(activity)
+            for activity in timeline:
+                if not current_cluster:
+                    current_cluster = [activity]
+                elif activity['activity_type'] == current_cluster[-1]['activity_type']:
+                    current_cluster.append(activity)
+                else:
+                    if len(current_cluster) > 1:
+                        clusters.append({
+                            "activity_type": current_cluster[0]['activity_type'],
+                            "start_time": current_cluster[0]['timestamp'],
+                            "end_time": current_cluster[-1]['timestamp'],
+                            "duration": current_cluster[-1]['timestamp'] - current_cluster[0]['timestamp'],
+                            "activity_count": len(current_cluster)
+                        })
+                    current_cluster = [activity]
             
             # Add final cluster
-            if current_cluster["activities"]:
-                current_cluster["end_time"] = timeline[-1]["timestamp"] if timeline else 0
-                clusters.append(current_cluster)
+            if len(current_cluster) > 1:
+                clusters.append({
+                    "activity_type": current_cluster[0]['activity_type'],
+                    "start_time": current_cluster[0]['timestamp'],
+                    "end_time": current_cluster[-1]['timestamp'],
+                    "duration": current_cluster[-1]['timestamp'] - current_cluster[0]['timestamp'],
+                    "activity_count": len(current_cluster)
+                })
             
             return clusters
             

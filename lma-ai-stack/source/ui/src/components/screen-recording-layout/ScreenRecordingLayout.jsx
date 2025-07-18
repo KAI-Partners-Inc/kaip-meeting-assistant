@@ -49,4 +49,4 @@ const ScreenRecordingLayout = () => {
   );
 };
 
-export default ScreenRecordingLayout; 
+export default ScreenRecordingLayout;

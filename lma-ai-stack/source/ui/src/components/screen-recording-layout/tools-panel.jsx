@@ -22,8 +22,8 @@ const ToolsPanel = () => (
       <div>
         <h4>How to use Screen Recording</h4>
         <p>
-          The Screen Recording feature allows you to capture both your screen content and audio during meetings.
-          This enables the meeting assistant to provide comprehensive analysis including:
+          The Screen Recording feature allows you to capture both your screen content and audio during meetings. This
+          enables the meeting assistant to provide comprehensive analysis including:
         </p>
         <ul>
           <li>Visual content analysis (presentations, documents, applications)</li>
@@ -32,7 +32,7 @@ const ToolsPanel = () => (
           <li>Combined audio and visual insights</li>
         </ul>
       </div>
-      
+
       <div>
         <h4>Best Practices</h4>
         <ul>
@@ -42,11 +42,13 @@ const ToolsPanel = () => (
           <li>Test your setup before important meetings</li>
         </ul>
       </div>
-      
+
       <div>
         <h4>Privacy & Security</h4>
+        {/* prettier-ignore */}
         <p>
-          Your recordings are processed securely and stored according to your organization's policies.
+          {/* eslint-disable-next-line max-len */}
+          Your recordings are processed securely and stored according to your organization&apos;s policies.
           Always obtain consent before recording meetings with participants.
         </p>
       </div>
@@ -54,4 +56,4 @@ const ToolsPanel = () => (
   </Container>
 );
 
-export default ToolsPanel; 
+export default ToolsPanel;

@@ -18,6 +18,18 @@ const initialUserContext = {
 };
 const UserContext = createContext(initialUserContext);
 
+function shouldRefreshToken(token: string): boolean {
+  if (!token) return false;
+  try {
+    const [, payload] = token.split('.');
+    const { exp } = JSON.parse(atob(payload));
+    // Refresh if token expires in the next 5 minutes
+    return exp * 1000 - Date.now() < 5 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
 function UserProvider({ children }: any) {
   const [user, setUser] = useState<User>({});
   const settings = useSettings();

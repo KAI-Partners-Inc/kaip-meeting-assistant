@@ -112,6 +112,11 @@ export type CallMetaData = {
     refreshToken?: string,
 };
 
+export interface ScreenFrame {
+    timestamp: number;
+    data: ArrayBuffer | Uint8Array | string;
+}
+
 export type SocketCallData = {
     callMetadata: CallMetaData,
     audioInputStream?: stream.PassThrough,
@@ -120,7 +125,7 @@ export type SocketCallData = {
     screenRecordingStream?: WriteStream,
     screenRecordingFileSize?: number,
     screenRecordingMetadata?: CallMetaData,
-    screenFrames?: any[],
+    screenFrames?: ScreenFrame[],
     startStreamTime: Date,
     speakerEvents: [],
     ended: boolean

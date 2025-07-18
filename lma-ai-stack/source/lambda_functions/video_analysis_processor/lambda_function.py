@@ -7,7 +7,9 @@ import asyncio
 import json
 import os
 import tempfile
-from typing import Dict, List, Optional
+import time
+
+from typing import TYPE_CHECKING, Dict, List, Optional
 from datetime import datetime
 
 # third-party imports from Lambda layer
@@ -41,9 +43,9 @@ else:
 
 # Environment variables
 APPSYNC_GRAPHQL_URL = os.environ["APPSYNC_GRAPHQL_URL"]
-S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
-VIDEO_FILE_PREFIX = os.environ.get("VIDEO_FILE_PREFIX", "lma-video-recordings/")
-RECORDINGS_BUCKET_NAME = os.environ.get("RECORDINGS_BUCKET_NAME")
+VIDEO_SUMMARY_BUCKET = os.environ.get("VIDEO_SUMMARY_BUCKET", "")
+VIDEO_SUMMARY_PREFIX = os.environ.get("VIDEO_SUMMARY_PREFIX", "lma-video-recordings/")
+ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN = os.environ.get("ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN", "")
 
 # AWS clients
 BOTO3_SESSION: Boto3Session = boto3.Session()
@@ -54,6 +56,7 @@ CLIENT_CONFIG = BotoCoreConfig(
 S3_CLIENT: S3Client = BOTO3_SESSION.client("s3", config=CLIENT_CONFIG)
 REKOGNITION_CLIENT: RekognitionClient = BOTO3_SESSION.client("rekognition", config=CLIENT_CONFIG)
 BEDROCK_CLIENT: BedrockClient = BOTO3_SESSION.client("bedrock-runtime", config=CLIENT_CONFIG)
+LAMBDA_CLIENT = BOTO3_SESSION.client("lambda", config=CLIENT_CONFIG)
 
 APPSYNC_CLIENT = AppsyncAioGqlClient(
     url=APPSYNC_GRAPHQL_URL, fetch_schema_from_transport=True)
@@ -62,13 +65,81 @@ LOGGER = Logger(location="%(filename)s:%(lineno)d - %(funcName)s()")
 
 EVENT_LOOP = asyncio.get_event_loop()
 
+lambda_client = boto3.client("lambda")
+CALL_EVENT_PROCESSOR_ARN = os.environ.get("CALL_EVENT_PROCESSOR_ARN")
+
+def emit_add_s3_recording_url_event(call_id, video_bucket, video_key):
+    """Emit ADD_S3_RECORDING_URL event to call event processor Lambda"""
+    if not (CALL_EVENT_PROCESSOR_ARN and call_id and video_bucket and video_key):
+        LOGGER.error(f"Missing required info to emit ADD_S3_RECORDING_URL: ARN={CALL_EVENT_PROCESSOR_ARN}, call_id={call_id}, video_bucket={video_bucket}, video_key={video_key}")
+        return
+    recording_url = f"s3://{video_bucket}/{video_key}"
+    event = {
+        "EventType": "ADD_S3_RECORDING_URL",
+        "CallId": call_id,
+        "RecordingUrl": recording_url
+    }
+    try:
+        lambda_client.invoke(
+            FunctionName=CALL_EVENT_PROCESSOR_ARN,
+            InvocationType="Event",
+            Payload=json.dumps(event)
+        )
+        LOGGER.debug(f"Emitted ADD_S3_RECORDING_URL event for call_id={call_id}")
+    except Exception as e:
+        LOGGER.error(f"Failed to emit ADD_S3_RECORDING_URL event: {e}")
+
+
+async def wait_for_recording_url(call_id, max_retries=10, delay=300):
+    """Poll AppSync until RecordingUrl is set for the call."""
+    for attempt in range(max_retries):
+        query = """
+        query GetCall($CallId: ID!) {
+            getCall(CallId: $CallId) {
+                RecordingUrl
+            }
+        }
+        """
+        variables = {"CallId": call_id}
+        result = await APPSYNC_CLIENT.execute(query, variable_values=variables)
+        recording_url = result.get("getCall", {}).get("RecordingUrl")
+        if recording_url:
+            return recording_url
+        if attempt < max_retries - 1:
+            LOGGER.debug(f"RecordingUrl not set yet for call {call_id}, retrying ({attempt+1}/{max_retries})...")
+            time.sleep(delay)
+    LOGGER.error(f"RecordingUrl was not set for call {call_id} after {max_retries} retries.")
+    return None
+
+def emit_end_event(call_id, video_bucket, video_key):
+    """Emit END event to call event processor Lambda"""
+    if not (CALL_EVENT_PROCESSOR_ARN and call_id and video_bucket and video_key):
+        LOGGER.error(f"Missing required info to emit END event: ARN={CALL_EVENT_PROCESSOR_ARN}, call_id={call_id}, video_bucket={video_bucket}, video_key={video_key}")
+        return
+    event = {
+        "EventType": "END",
+        "CallId": call_id,
+        "VideoBucket": video_bucket,
+        "VideoKey": video_key
+    }
+    try:
+        lambda_client.invoke(
+            FunctionName=CALL_EVENT_PROCESSOR_ARN,
+            InvocationType="Event",
+            Payload=json.dumps(event)
+        )
+        LOGGER.debug(f"Emitted END event for call_id={call_id}")
+    except Exception as e:
+        LOGGER.error(f"Failed to emit END event: {e}")
+
 
 class VideoAnalysisProcessor:
     """Processes video recordings and generates summaries alongside transcript analysis"""
     
-    def __init__(self, call_id: str, video_url: str, transcript_data: Optional[Dict] = None):
+    def __init__(self, call_id: str, video_bucket: str, video_key: str, transcript_data: Optional[Dict] = None):
         self.call_id = call_id
-        self.video_url = video_url
+        self.video_bucket = video_bucket
+        self.video_key = video_key
         self.transcript_data = transcript_data or {}
         self.video_processor = VideoProcessor(S3_CLIENT, REKOGNITION_CLIENT)
         self.screen_analyzer = ScreenAnalyzer(REKOGNITION_CLIENT)
@@ -77,16 +148,21 @@ class VideoAnalysisProcessor:
     async def process_video(self) -> Dict:
         """Main processing pipeline for video analysis"""
         try:
-            LOGGER.info(f"Starting video analysis for call: {self.call_id}")
+            LOGGER.debug(f"Starting video analysis for call: {self.call_id}")
             
-            # Download video from S3
-            video_path = await self._download_video()
+            # Process video from S3
+            video_analysis = await self.video_processor.process_video_from_s3(
+                self.video_bucket, self.video_key
+            )
             
-            # Extract frames for analysis
-            frames = await self.video_processor.extract_key_frames(video_path)
-            
-            # Analyze screen content
-            screen_analysis = await self.screen_analyzer.analyze_frames(frames)
+            # For now, create a basic screen analysis since we don't have frames
+            screen_analysis = {
+                "analysis_type": "basic",
+                "frames_analyzed": 0,
+                "text_content": video_analysis.get("text_content", {}),
+                "objects_detected": video_analysis.get("objects_detected", {}),
+                "note": "Full frame analysis requires AWS MediaConvert integration"
+            }
             
             # Generate video summary
             video_summary = await self.summary_generator.generate_summary(
@@ -96,10 +172,7 @@ class VideoAnalysisProcessor:
             # Store results
             await self._store_results(video_summary, screen_analysis)
             
-            # Cleanup
-            self._cleanup_temp_files(video_path)
-            
-            LOGGER.info(f"Video analysis completed for call: {self.call_id}")
+            LOGGER.debug(f"Video analysis completed for call: {self.call_id}")
             return {
                 "call_id": self.call_id,
                 "video_summary": video_summary,
@@ -115,31 +188,6 @@ class VideoAnalysisProcessor:
                 "status": "failed"
             }
     
-    async def _download_video(self) -> str:
-        """Download video file from S3 to local temp storage"""
-        try:
-            # Extract key from video URL
-            video_key = self.video_url.split('.com/')[-1]
-            
-            # Create temp file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-            temp_path = temp_file.name
-            temp_file.close()
-            
-            # Download from S3
-            S3_CLIENT.download_file(
-                RECORDINGS_BUCKET_NAME,
-                video_key,
-                temp_path
-            )
-            
-            LOGGER.info(f"Downloaded video to: {temp_path}")
-            return temp_path
-            
-        except Exception as e:
-            LOGGER.error(f"Error downloading video: {str(e)}")
-            raise
-    
     async def _store_results(self, video_summary: Dict, screen_analysis: Dict):
         """Store analysis results in S3 and update database"""
         try:
@@ -150,15 +198,16 @@ class VideoAnalysisProcessor:
                 "video_summary": video_summary,
                 "screen_analysis": screen_analysis,
                 "metadata": {
-                    "video_url": self.video_url,
-                    "processing_version": "1.0"
+                    "video_source": f"s3://{self.video_bucket}/{self.video_key}",
+                    "processing_version": "1.0",
+                    "analysis_type": "basic_metadata"
                 }
             }
             
             # Store in S3
-            results_key = f"{VIDEO_FILE_PREFIX}{self.call_id}/video-analysis.json"
+            results_key = f"{VIDEO_SUMMARY_PREFIX}{self.call_id}/video-analysis.json"
             S3_CLIENT.put_object(
-                Bucket=S3_BUCKET_NAME,
+                Bucket=VIDEO_SUMMARY_BUCKET,
                 Key=results_key,
                 Body=json.dumps(results_data, indent=2),
                 ContentType="application/json"
@@ -167,7 +216,32 @@ class VideoAnalysisProcessor:
             # Update AppSync with video analysis results
             await self._update_appsync_results(results_data)
             
-            LOGGER.info(f"Stored video analysis results for call: {self.call_id}")
+            LOGGER.debug(f"Stored video analysis results for call: {self.call_id}")
+
+            # Invoke orchestrator Lambda after successful S3 write
+            if ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN:
+                try:
+                    payload = {
+                        "CallId": self.call_id,
+                        # Add any other fields needed by orchestrator
+                    }
+                    LAMBDA_CLIENT.invoke(
+                        FunctionName=ASYNC_TRANSCRIPT_SUMMARY_ORCHESTRATOR_ARN,
+                        InvocationType='Event',
+                        Payload=json.dumps(payload)
+                    )
+                    LOGGER.debug(f"Invoked orchestrator Lambda for call: {self.call_id}")
+                except Exception as invoke_err:
+                    LOGGER.error(f"Failed to invoke orchestrator Lambda: {invoke_err}")
+
+            # After successful S3 upload, call the helper:
+            emit_add_s3_recording_url_event(self.call_id, self.video_bucket, self.video_key)
+            # Wait for RecordingUrl to be set in the call record
+            recording_url = await wait_for_recording_url(self.call_id)
+            if recording_url:
+                emit_end_event(self.call_id, self.video_bucket, self.video_key)
+            else:
+                LOGGER.error(f"Could not emit END event because RecordingUrl was not set for call {self.call_id}")
             
         except Exception as e:
             LOGGER.error(f"Error storing results: {str(e)}")
@@ -181,8 +255,7 @@ class VideoAnalysisProcessor:
             mutation UpdateCallWithVideoAnalysis($callId: String!, $videoAnalysis: String!) {
                 updateCallWithVideoAnalysis(callId: $callId, videoAnalysis: $videoAnalysis) {
                     callId
-                    videoAnalysis
-                    updatedAt
+                    success
                 }
             }
             """
@@ -192,36 +265,30 @@ class VideoAnalysisProcessor:
                 "videoAnalysis": json.dumps(results_data)
             }
             
-            await APPSYNC_CLIENT.execute(mutation, variables)
-            LOGGER.info(f"Updated AppSync with video analysis for call: {self.call_id}")
+            result = await APPSYNC_CLIENT.execute(mutation, variable_values=variables)
+            LOGGER.debug(f"Updated AppSync with video analysis for call: {self.call_id}")
             
         except Exception as e:
             LOGGER.error(f"Error updating AppSync: {str(e)}")
-            # Don't raise - this is not critical for the main processing
-    
-    def _cleanup_temp_files(self, video_path: str):
-        """Clean up temporary files"""
-        try:
-            if os.path.exists(video_path):
-                os.unlink(video_path)
-                LOGGER.info(f"Cleaned up temp file: {video_path}")
-        except Exception as e:
-            LOGGER.warning(f"Error cleaning up temp file: {str(e)}")
+            # Don't fail the entire process if AppSync update fails
 
 
 async def process_video_event(event: Dict) -> Dict:
     """Process video analysis event"""
     try:
-        # Extract event data
-        call_id = event.get("callId")
-        video_url = event.get("videoUrl")
-        transcript_data = event.get("transcriptData")
+        # LOGGER.debug(f"Incoming event: {json.dumps(event)}")
+        # Extract event data (support both lowerCamelCase and UpperCamelCase)
+        call_id = event.get("callId") or event.get("CallId")
+        video_bucket = event.get("videoBucket") or event.get("VideoBucket")
+        video_key = event.get("videoKey") or event.get("VideoKey")
+        transcript_data = event.get("transcriptData") or event.get("TranscriptData")
+        LOGGER.debug(f"Variables: call_id: {call_id} video_bucket: {video_bucket} video_key: {video_key} transcript_data: {transcript_data}")
         
-        if not call_id or not video_url:
-            raise ValueError("Missing required fields: callId and videoUrl")
+        if not call_id or not video_bucket or not video_key:
+            raise ValueError("Missing required fields: callId, videoBucket, and videoKey")
         
         # Create processor and run analysis
-        processor = VideoAnalysisProcessor(call_id, video_url, transcript_data)
+        processor = VideoAnalysisProcessor(call_id, video_bucket, video_key, transcript_data)
         result = await processor.process_video()
         
         return result
@@ -244,7 +311,6 @@ def handler(event, context: LambdaContext):
     result = EVENT_LOOP.run_until_complete(process_video_event(event))
     
     LOGGER.debug("video analysis result", extra={"result": result})
-    
     if result.get("status") == "failed":
         LOGGER.error("Video analysis failed", extra={"error": result.get("error")})
         raise Exception(f"Video analysis failed: {result.get('error')}")

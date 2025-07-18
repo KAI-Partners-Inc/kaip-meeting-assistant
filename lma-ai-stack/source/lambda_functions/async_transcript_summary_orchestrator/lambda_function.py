@@ -50,9 +50,11 @@ KINESIS_CLIENT: KinesisClient = BOTO3_SESSION.client(
 
 TRANSCRIPT_SUMMARY_FUNCTION_ARN = getenv("TRANSCRIPT_SUMMARY_FUNCTION_ARN", "")
 CALL_DATA_STREAM_NAME = getenv("CALL_DATA_STREAM_NAME", "")
+VIDEO_SUMMARY_BUCKET = getenv("VIDEO_SUMMARY_BUCKET", "")
+VIDEO_SUMMARY_PREFIX = getenv("VIDEO_SUMMARY_PREFIX", "lma-video-recordings/")
 
 def get_user_email(access_token):
-    cognito_userinfo_endpoint = "https://jtc-uat-1746644220046210180.auth.us-east-1.amazoncognito.com/oauth2/userInfo"
+    cognito_userinfo_endpoint = "https://kaip-uat-1751403802838633857.auth.us-east-1.amazoncognito.com/oauth2/userInfo"
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get(cognito_userinfo_endpoint, headers=headers)
     if response.status_code == 200:
@@ -62,6 +64,21 @@ def get_user_email(access_token):
     else:
         print(response)
         return 'error, cognito api failed'
+
+def get_video_summary(call_id: str) -> dict:
+    if not VIDEO_SUMMARY_BUCKET:
+        return None
+    s3 = boto3.client('s3')
+    key = f"{VIDEO_SUMMARY_PREFIX}{call_id}/video-analysis.json"
+    try:
+        response = s3.get_object(Bucket=VIDEO_SUMMARY_BUCKET, Key=key)
+        data = response['Body'].read().decode('utf-8')
+        video_summary_json = json.loads(data)
+        # The summary is typically under 'video_summary' key
+        return video_summary_json.get('video_summary', {})
+    except Exception as e:
+        print(f"Could not fetch video summary: {e}")
+        return None
 
 def get_call_summary(
     message: Dict[str, Any]
@@ -105,6 +122,12 @@ def get_call_summary(
         for key, value in summary_dict.items():
             # Append the key and value to the summary string with line breaks for Markdown
             summary += f"## {key}\n\n{value}\n\n"
+        # Add video summary if available
+        video_summary = get_video_summary(meeting_title)
+        if video_summary:
+            summary += "\n## Video Analysis Summary\n"
+            for key, value in video_summary.items():
+                summary += f"### {key}\n{value}\n\n"
         
         # Replace escaped newline (\n) characters with actual newlines
         summary = summary.replace('\\n', '\n')

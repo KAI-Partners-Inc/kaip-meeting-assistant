@@ -31,7 +31,8 @@ import {
     AddTranscriptSegmentEvent,
     SocketCallData,
     CallMetaData,
-    ChannelSpeakerData
+    ChannelSpeakerData,
+    CallScreenRecordingEvent
 } from './eventtypes';
 
 import { normalizeErrorForLogging } from '../utils';
@@ -91,7 +92,7 @@ const kinesisClient = new KinesisClient({ region: AWS_REGION });
 const transcribeClient = new TranscribeStreamingClient({ region: AWS_REGION });
 
 export const writeCallEvent = async (
-    callEvent: CallStartEvent | CallEndEvent | CallRecordingEvent,
+    callEvent: CallStartEvent | CallEndEvent | CallRecordingEvent | CallScreenRecordingEvent,
     server: FastifyInstance
 ) => {
     const putParams = {
@@ -174,7 +175,7 @@ export const writeCallScreenRecordingEvent = async (
     screenRecordingUrl: string,
     server: FastifyInstance
 ): Promise<void> => {
-    const callScreenRecordingEvent = {
+    const callScreenRecordingEvent: CallScreenRecordingEvent = {
         EventType: 'ADD_S3_SCREEN_RECORDING_URL',
         CallId: callMetaData.callId,
         ScreenRecordingUrl: screenRecordingUrl,

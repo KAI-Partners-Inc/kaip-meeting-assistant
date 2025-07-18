@@ -27,32 +27,30 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
   const { currentCredentials } = useAppContext();
   const [activeTab, setActiveTab] = useState('summary');
   const [expandedSections, setExpandedSections] = useState(new Set(['executive']));
-  
+
   const videoAnalysis = videoAnalysisData ? JSON.parse(videoAnalysisData) : null;
-  
+
   if (!videoAnalysis) {
     return (
       <Container
         header={
-          <Header
-            variant="h3"
-            description="No video analysis available for this meeting"
-          >
+          <Header variant="h3" description="No video analysis available for this meeting">
             Video Analysis
           </Header>
         }
       >
         <Alert type="info">
-          This meeting does not include video analysis. To enable video analysis, use the Screen Recording feature when starting your meeting.
+          This meeting does not include video analysis. To enable video analysis, use the Screen Recording feature when
+          starting your meeting.
         </Alert>
       </Container>
     );
   }
-  
+
   const handleTabChange = ({ detail }) => {
     setActiveTab(detail.activeTabId);
   };
-  
+
   const toggleSection = (sectionId) => {
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(sectionId)) {
@@ -62,7 +60,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
     }
     setExpandedSections(newExpanded);
   };
-  
+
   const getPriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
       case 'high':
@@ -75,7 +73,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
         return 'pending';
     }
   };
-  
+
   const tabs = [
     {
       id: 'summary',
@@ -92,7 +90,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
               <p>{videoAnalysis.video_summary?.executive_summary || 'No executive summary available.'}</p>
             </TextContent>
           </ExpandableSection>
-          
+
           <ExpandableSection
             variant="container"
             header="Detailed Analysis"
@@ -103,7 +101,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
               <p>{videoAnalysis.video_summary?.detailed_summary || 'No detailed analysis available.'}</p>
             </TextContent>
           </ExpandableSection>
-          
+
           <ExpandableSection
             variant="container"
             header="Key Insights"
@@ -114,13 +112,19 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
               {videoAnalysis.video_summary?.key_insights?.map((insight, index) => (
                 <Box key={index} padding="s" backgroundColor="background-container">
                   <TextContent>
-                    <p><strong>{index + 1}.</strong> {insight}</p>
+                    <p>
+                      <strong>{index + 1}.</strong> {insight}
+                    </p>
                   </TextContent>
                 </Box>
-              )) || <TextContent><p>No key insights available.</p></TextContent>}
+              )) || (
+                <TextContent>
+                  <p>No key insights available.</p>
+                </TextContent>
+              )}
             </SpaceBetween>
           </ExpandableSection>
-          
+
           <ExpandableSection
             variant="container"
             header="Action Items"
@@ -129,26 +133,21 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
           >
             <Cards
               cardDefinition={{
-                header: item => (
+                header: (item) => (
                   <SpaceBetween direction="horizontal" size="xs">
                     <span>{item.action}</span>
-                    <StatusIndicator type={getPriorityColor(item.priority)}>
-                      {item.priority}
-                    </StatusIndicator>
+                    <StatusIndicator type={getPriorityColor(item.priority)}>{item.priority}</StatusIndicator>
                   </SpaceBetween>
                 ),
                 sections: [
                   {
                     id: 'assignee',
                     header: 'Assignee',
-                    content: item => item.assignee || 'TBD'
-                  }
-                ]
+                    content: (item) => item.assignee || 'TBD',
+                  },
+                ],
               }}
-              cardsPerRow={[
-                { cards: 1 },
-                { minWidth: 500, cards: 2 }
-              ]}
+              cardsPerRow={[{ cards: 1 }, { minWidth: 500, cards: 2 }]}
               items={videoAnalysis.video_summary?.action_items || []}
               loadingText="Loading action items..."
               empty={
@@ -161,7 +160,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
             />
           </ExpandableSection>
         </SpaceBetween>
-      )
+      ),
     },
     {
       id: 'content',
@@ -195,7 +194,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
               </Box>
             </ColumnLayout>
           </ExpandableSection>
-          
+
           <ExpandableSection
             variant="container"
             header="Text Content Analysis"
@@ -210,7 +209,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
                   <p>Unique text elements: {videoAnalysis.screen_analysis?.text_analysis?.unique_text_count || 0}</p>
                 </TextContent>
               </Box>
-              
+
               {videoAnalysis.screen_analysis?.text_analysis?.important_text?.length > 0 && (
                 <Box>
                   <TextContent>
@@ -225,7 +224,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
               )}
             </SpaceBetween>
           </ExpandableSection>
-          
+
           <ExpandableSection
             variant="container"
             header="Application Usage"
@@ -239,16 +238,18 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
                   <p>{videoAnalysis.screen_analysis?.object_analysis?.primary_application || 'Unknown'}</p>
                 </TextContent>
               </Box>
-              
+
               {videoAnalysis.screen_analysis?.object_analysis?.application_usage && (
                 <Box>
                   <TextContent>
                     <h4>Application Usage Breakdown</h4>
                     <ul>
                       {Object.entries(videoAnalysis.screen_analysis.object_analysis.application_usage)
-                        .sort(([,a], [,b]) => b - a)
+                        .sort(([, a], [, b]) => b - a)
                         .map(([app, count]) => (
-                          <li key={app}>{app}: {count} detections</li>
+                          <li key={app}>
+                            {app}: {count} detections
+                          </li>
                         ))}
                     </ul>
                   </TextContent>
@@ -257,7 +258,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
             </SpaceBetween>
           </ExpandableSection>
         </SpaceBetween>
-      )
+      ),
     },
     {
       id: 'patterns',
@@ -274,24 +275,31 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
               <Box>
                 <TextContent>
                   <h4>Text-Heavy Frames</h4>
-                  <p>{videoAnalysis.screen_analysis?.pattern_analysis?.text_heavy_frames?.percentage?.toFixed(1) || 0}%</p>
+                  <p>
+                    {videoAnalysis.screen_analysis?.pattern_analysis?.text_heavy_frames?.percentage?.toFixed(1) || 0}%
+                  </p>
                 </TextContent>
               </Box>
               <Box>
                 <TextContent>
                   <h4>Image-Heavy Frames</h4>
-                  <p>{videoAnalysis.screen_analysis?.pattern_analysis?.image_heavy_frames?.percentage?.toFixed(1) || 0}%</p>
+                  <p>
+                    {videoAnalysis.screen_analysis?.pattern_analysis?.image_heavy_frames?.percentage?.toFixed(1) || 0}%
+                  </p>
                 </TextContent>
               </Box>
               <Box>
                 <TextContent>
                   <h4>Mixed Content Frames</h4>
-                  <p>{videoAnalysis.screen_analysis?.pattern_analysis?.mixed_content_frames?.percentage?.toFixed(1) || 0}%</p>
+                  <p>
+                    {videoAnalysis.screen_analysis?.pattern_analysis?.mixed_content_frames?.percentage?.toFixed(1) || 0}
+                    %
+                  </p>
                 </TextContent>
               </Box>
             </ColumnLayout>
           </ExpandableSection>
-          
+
           <ExpandableSection
             variant="container"
             header="Activity Timeline"
@@ -312,14 +320,18 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
                     ))}
                   </TextContent>
                 </Box>
-              )) || <TextContent><p>No activity timeline available.</p></TextContent>}
+              )) || (
+                <TextContent>
+                  <p>No activity timeline available.</p>
+                </TextContent>
+              )}
             </SpaceBetween>
           </ExpandableSection>
         </SpaceBetween>
-      )
-    }
+      ),
+    },
   ];
-  
+
   return (
     <Container
       header={
@@ -327,12 +339,7 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
           variant="h3"
           description="Analysis of screen content and visual elements from the meeting"
           actions={
-            <Button
-              variant="normal"
-              href={`#/screen-recording`}
-              iconAlign="right"
-              iconName="external"
-            >
+            <Button variant="normal" href={`#/screen-recording`} iconAlign="right" iconName="external">
               Record New Meeting
             </Button>
           }
@@ -341,14 +348,9 @@ const VideoAnalysis = ({ callId, videoAnalysisData }) => {
         </Header>
       }
     >
-      <Tabs
-        tabs={tabs}
-        activeTabId={activeTab}
-        onChange={handleTabChange}
-        ariaLabel="Video analysis tabs"
-      />
+      <Tabs tabs={tabs} activeTabId={activeTab} onChange={handleTabChange} ariaLabel="Video analysis tabs" />
     </Container>
   );
 };
 
-export default VideoAnalysis; 
+export default VideoAnalysis;

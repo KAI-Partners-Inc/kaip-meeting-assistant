@@ -166,7 +166,7 @@ function IntegrationProvider({ children }: any) {
       callId: `${meetingTopic} - ${getTimestampStr()}`,
       samplingRate: 8000,
       activeSpeaker: 'n/a',
-      recordingType: 'audio_video' // Indicate this call includes both audio and video
+      recordingType: 'audio_video'
     }
 
     setCurrentCall(callMetadata);
@@ -175,12 +175,12 @@ function IntegrationProvider({ children }: any) {
       if (chrome.runtime) {
         const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
         if (tab.id) {
-          const response = await chrome.tabs.sendMessage(tab.id, { action: "StartTranscription" });
-          // We send a message here, but not actually start the stream until we receive a new message with the sample rate.
+          // Start both transcription and screen recording
+          await chrome.tabs.sendMessage(tab.id, { action: "StartTranscription" });
         }
       }
     } catch (exception) {
-      alert("If you recently installed or update LMA, please refresh the browser's page and try again.");
+      alert("If you recently installed or updated LMA, please refresh the browser's page and try again.");
     }
   }, [setShouldConnect, setCurrentCall]);
 
